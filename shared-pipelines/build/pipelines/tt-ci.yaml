@@ -1,0 +1,171 @@
+variables:
+   IMAGE_NAME: ""
+   #Sonarqube default değeri true oldugu için istenilen projelerde false'a çekilip kapatılabilir.
+   SONARQUBE_ENABLE: "true"
+   #Maven kullanılan projelerde true'ya çekilerek Maven adımı aktifleştirilebilir.
+   FORTIFY_ENABLE: "false"
+   MAVEN_ENABLE: "false"
+   # SERVICE_PATH verilirse eger monorepo olarak pipeline ilerleyecektir.
+   SERVICE_PATH: "./" 
+   MAVEN_EXTRA_PARAMS: "-DskipTests" 
+   MAVEN_EXTRA_PARAMS_SONAR: "-DskipTests"
+   DOTNET_ENABLE: "false"
+   EXTRA_COMMAND: ""
+   TRIGGER_BRANCH: ""
+   GRADLE_ENABLE: "false"
+   PROJECT_NAME: ""
+   SERVICE_NAME: ""
+   NPM_ENABLE: "false"
+   MAVEN_SONAR: "false"
+   TAG_RUNNER: default-runner
+   DOCKER_ENABLE: "true"
+   TARGET_PATH: $SERVICE_PATH
+   MULTI_COMMAND: ""
+
+stages:
+  - git_clone_job
+  - test
+  - maven-build
+  - gradle-build
+  - npm-build  
+  - docker-build
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG 
+
+services:
+  - name: docker:19.03.12-dind
+    command:
+      - /bin/sh
+      - -c
+
+git_clone_job: 
+  stage: git_clone_job
+  rules:
+    - if: $SONARQUBE_ENABLE  == "true" || $FORTIFY_ENABLE == "true"
+  image: bitnami/git
+  tags:
+    - $TAG_RUNNER
+  artifacts:
+    paths: 
+      - shared-pipelines/build/pipelines/*
+  script:
+      - git clone --branch $TRIGGER_BRANCH https://${TT_TRIGGER_CI_NAME}:${TT_TRIGGER_CI_TOKEN}@gitlab.paas.turktelekom.com.tr/bulut/paas/devops/shared-pipelines.git
+
+sonarqube-check:
+  stage: test
+  allow_failure: true
+  rules:
+    - if: $SONARQUBE_ENABLE == "true"
+  trigger:
+    include:
+      - artifact: shared-pipelines/build/pipelines/tt-sonarqube-ci.yaml
+        job: git_clone_job
+  variables:
+    MAVEN_ENABLE: "$MAVEN_ENABLE"
+    SERVICE_PATH: "$SERVICE_PATH"
+    IMAGE_NAME: "$IMAGE_NAME"
+    DOTNET_ENABLE: "$DOTNET_ENABLE"
+    EXTRA_COMMAND: "$EXTRA_COMMAND"
+    GRADLE_ENABLE: "$GRADLE_ENABLE"
+    MAVEN_SONAR: "$MAVEN_SONAR_PARAMS"
+    TAG_RUNNER: "$TAG_RUNNER"
+    MAVEN_EXTRA_PARAMS_SONAR: "$MAVEN_EXTRA_PARAMS_SONAR"
+
+fortify-check:
+  stage: test
+  allow_failure: true
+  rules:
+    - if: $FORTIFY_ENABLE == "true"
+  trigger:
+    include:
+      - artifact: shared-pipelines/build/pipelines/tt-fortify-ci.yaml
+        job: git_clone_job
+  variables:
+    MAVEN_ENABLE: "$MAVEN_ENABLE"
+    SERVICE_PATH: "$SERVICE_PATH"
+    PROJECT_NAME: "$PROJECT_NAME"
+    SERVICE_NAME: "$SERVICE_NAME"
+    
+  
+maven_build:
+  stage: maven-build
+  rules:
+    - if: $MAVEN_ENABLE == "true"
+  image: maven:3-openjdk-17
+  tags:
+    - $TAG_RUNNER
+  script:
+    - env
+    - cd $SERVICE_PATH 
+    # - "mvn clean package -B -DskipTests"
+    - mvn clean package install ${MAVEN_EXTRA_PARAMS}
+    - $MULTI_COMMAND
+    # - 'mvn deploy -s ../ci-settings.xml'
+  artifacts:
+    paths:
+      - $TARGET_PATH/target/*.jar
+
+
+
+gradle_build:
+  stage: gradle-build
+  rules:
+    - if: $GRADLE_ENABLE == "true"
+  image: gradle:jdk11
+  tags:
+    - $TAG_RUNNER
+  script:
+    - wget https://nodejs.org/dist/v16.1.0/node-v16.1.0-linux-x64.tar.gz
+    - tar -C /usr/local --strip-components 1 -xzf node-v16.1.0-linux-x64.tar.gz
+    - cd $SERVICE_PATH 
+    -  ./gradlew clean build --build-cache --parallel
+  artifacts:
+    paths:
+      - $TARGET_PATH/build/libs/*.jar
+
+npm_build:
+  stage: npm-build
+  rules:
+    - if: $NPM_ENABLE == "true"
+  image: node:16.1.0
+  tags:
+    - $TAG_RUNNER
+  script:
+    - env
+    - cd $SERVICE_PATH
+    - npm install 
+    - npm run build
+  artifacts:
+    paths:
+      - node_modules/
+      - server.js
+      - dist
+ 
+docker_build:
+  stage: docker-build
+  rules:
+    - if: $DOCKER_ENABLE == "true"  
+  tags:
+    - $TAG_RUNNER
+  image:
+    name: quay.io/buildah/stable:latest
+    entrypoint:
+     - ''
+  variables:
+    STORAGE_DRIVER: vfs     
+  script:
+    - env
+    #- ls -lrt *
+    #- env
+    - cd $SERVICE_PATH  
+    #- ls -lrt target/
+    - export HOME=/tmp
+    - echo -n $DOCKER_PASSWORD | buildah login -u $DOCKER_USER --password-stdin $DOCKER_REGISTRY    
+    - echo -n $CI_REGISTRY_PASSWORD | buildah login -u $CI_REGISTRY_USER --password-stdin $CI_REGISTRY
+    - cat /etc/containers/registries.conf
+    - pwd
+    - buildah build -it -t $CI_REGISTRY/$CI_PROJECT_PATH/$IMAGE_NAME:$CI_COMMIT_REF_NAME .
+    # - buildah push $CI_REGISTRY/$CI_PROJECT_PATH/$IMAGE_NAME:$CI_COMMIT_REF_NAME
+    # - buildah rmi $CI_REGISTRY/$CI_PROJECT_PATH/$IMAGE_NAME:$CI_COMMIT_REF_NAME

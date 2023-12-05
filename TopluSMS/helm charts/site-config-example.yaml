@@ -1,0 +1,12 @@
+route:
+  enabled: true
+  host:
+    name: chart-example.local
+
+image:
+  repository: openshift/hello-openshift
+  tag: "latest"
+
+containerPort: 8080
+
+nameOverride: "smartbill-mpls"

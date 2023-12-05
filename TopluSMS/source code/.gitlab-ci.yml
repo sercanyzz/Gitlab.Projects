@@ -1,0 +1,26 @@
+variables:
+   MAVEN_ENABLE: "false"
+   SONARQUBE_ENABLE: "false"
+   TRIGGER_BRANCH: "0.0.63"
+
+stages:
+  - git_clone_job
+  - build-ci
+
+git_clone_job: 
+  stage: git_clone_job
+  image: bitnami/git
+  artifacts:
+    paths: 
+      - shared-pipelines/build/pipelines/*
+  script:
+    - git clone --branch $TRIGGER_BRANCH https://${TT_TRIGGER_CI_NAME}:${TT_TRIGGER_CI_TOKEN}@gitlab.paas.turktelekom.com.tr/bulut/paas/devops/shared-pipelines.git
+
+admin-gui:
+  stage: build-ci
+  trigger:
+    include:
+      - artifact: shared-pipelines/build/pipelines/tt-ci.yaml
+        job: git_clone_job
+  variables:
+    IMAGE_NAME: "admin-gui-service"

@@ -1,0 +1,14 @@
+apiVersion: v2
+name: <PROJECT_NAME>-<ENVIRONMENT_NAME>-<APP_NAME>
+description: A Helm chart for Kubernetes
+type: application
+version: 0.0.1
+dependencies: 
+- name: tt-common
+  alias: <APP_NAME>
+  version: <HELM_VERSION>
+  repository: "https://<HELM_TOKEN_NAME>:<HELM_TOKEN_PASSWORD>@gitlab.paas.turktelekom.com.tr/api/v4/projects/<PROJECT_ID>/packages/helm/stable"
+- name: tt-common
+  alias: <APP_NAME>
+  version: <HELM_VERSION>
+  repository: "https://<HELM_TOKEN_NAME>:<HELM_TOKEN_PASSWORD>@gitlab.paas.turktelekom.com.tr/api/v4/projects/<PROJECT_ID>/packages/helm/stable"

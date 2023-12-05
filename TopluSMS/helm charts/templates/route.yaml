@@ -1,0 +1,32 @@
+{{- if .Values.route.enabled -}}
+kind: Route
+apiVersion: route.openshift.io/v1
+metadata:
+  name: {{ include "tt-common.fullname" . }}
+  labels:
+    {{- include "tt-common.labels" . | nindent 4 }}
+  {{- if .Values.route.annotations }}
+  annotations: {{ toYaml .Values.route.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  host: {{ .Values.route.host.name | quote }}
+  to:
+    kind: Service
+    name: {{ include "tt-common.fullname" . }}
+    weight: 100
+  port:
+    targetPort: {{ .Values.service.name }}
+  wildcardPolicy: None
+  tls:
+    termination: edge
+    {{- if .Values.route.tls.certificate }}
+    certificate: |
+      {{- .Values.route.tls.certificate | nindent 8 }}
+    {{- end }}
+    {{- if .Values.route.tls.key }}
+    key: |
+      {{- .Values.route.tls.key | nindent 8 }}
+    {{- end }}  
+    insecureEdgeTerminationPolicy: Allow
+  wildcardPolicy: None
+{{- end }}

@@ -1,0 +1,45 @@
+#todo: dont trigger except main branch
+
+variables:
+  SERVICE_PATH: "./"
+  TAG_RUNNER: default-runner
+
+image: dtzar/helm-kubectl:3.7.1
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG
+
+stages:
+  - lint
+  - release
+  - upload
+
+lint:
+  stage: lint
+  tags:
+    - $TAG_RUNNER
+  script:
+    - helm lint $SERVICE_PATH
+
+release:
+  stage: release
+  tags:
+    - $TAG_RUNNER
+  script:
+    - helm package --version=$CI_COMMIT_REF_NAME $SERVICE_PATH
+    - ls -lart
+  artifacts:
+    expire_in: 2h
+    paths:
+      - "*.tgz"
+
+upload:
+  stage: upload
+  tags:
+    - $TAG_RUNNER
+  image: "registry.gitlab.com/gitlab-org/gitlab-build-images:gitlab-charts-build-base-helm-3"
+  script:
+    - helm dependency update $SERVICE_PATH
+    - chart_file=$(ls -l *.tgz | head -n 1 | awk '{print $NF}')
+    - curl --request POST --user gitlab-ci-token:$CI_JOB_TOKEN --form "chart=@${chart_file}" "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/helm/api/stable/charts"

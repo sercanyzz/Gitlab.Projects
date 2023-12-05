@@ -1,0 +1,47 @@
+variables:
+   MAVEN_ENABLE: "false"
+   SERVICE_PATH: "./" 
+   PROJECT_NAME: ""
+   SERVICE_NAME: ""
+
+stages:
+  - fortify 
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG 
+
+services:
+  - name: docker:19.03.12-dind
+    command:
+      - /bin/sh
+      - -c
+
+fortify-check:
+    stage: fortify
+    rules:
+    - if: $MAVEN_ENABLE != "true"
+    tags:
+      - jenkins
+    script:
+    - cd $SERVICE_PATH  
+    - export PATH=$PATH:/opt/Fortify/Fortify_SCA_and_Apps_22.1.0/bin
+    - echo $PATH 
+    - /opt/Fortify/Fortify_SCA_and_Apps_22.1.0/bin/sourceanalyzer -b ${PROJECT_NAME} -clean
+    - /opt/Fortify/Fortify_SCA_and_Apps_22.1.0/bin/sourceanalyzer -b ${PROJECT_NAME} ${CI_PROJECT_DIR}/**/*.*
+    - /opt/Fortify/Fortify_SCA_and_Apps_22.1.0/bin/scancentral -sscurl http://10.6.226.226:8080/ssc -ssctoken 0ee4f75a-ba91-4d9c-94aa-3cfe836fad3f  start -upload --application ${PROJECT_NAME} --application-version ${PROJECT_NAME}-${SERVICE_NAME} -b ${PROJECT_NAME} -uptoken 0ee4f75a-ba91-4d9c-94aa-3cfe836fad3f  -scan         
+
+fortify-maven-check:
+    stage: fortify
+    rules:
+    - if: $MAVEN_ENABLE == "true"
+    tags:
+      - jenkins  
+    script:
+    - cd $SERVICE_PATH     
+    - export PATH=$PATH:/opt/Fortify/Fortify_SCA_and_Apps_22.1.0/bin
+    - echo $PATH
+    - mvn com.fortify.sca.plugins.maven:sca-maven-plugin:22.1.0:clean -Dfortify.sca.buildId=${PROJECT_NAME}-${SERVICE_NAME}
+    - mvn clean package install -DskipTests -Dfortify.sca.buildId=${PROJECT_NAME}-${SERVICE_NAME} com.fortify.sca.plugins.maven:sca-maven-plugin:22.1.0:translate
+    - mvn com.fortify.sca.plugins.maven:sca-maven-plugin:22.1.0:startScanCentral -Dfortify.ScanCentral.buildId=${PROJECT_NAME}-${SERVICE_NAME} -Dfortify.ScanCentral.ctrl.url=http://10.6.226.201:8080/scancentral-ctrl/ -Dfortify.ScanCentral.uploadToSSC=true -Dfortify.ScanCentral.ssc.ScanCentralCtrlToken=0ee4f75a-ba91-4d9c-94aa-3cfe836fad3f -Dfortify.ScanCentral.ssc.url=http://10.6.226.226:8080/ssc -Dfortify.ssc.applicationName=${PROJECT_NAME} -Dfortify.ssc.applicationVersion=${PROJECT_NAME}-${SERVICE_NAME} -Dfortify.ScanCentral.ssc.uploadToken=0ee4f75a-ba91-4d9c-94aa-3cfe836fad3f  
+            

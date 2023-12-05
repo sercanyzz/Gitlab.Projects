@@ -1,0 +1,171 @@
+variables:
+   IMAGE_NAME: $IMAGE_NAME
+   MAVEN_ENABLE: "false"
+   SERVICE_PATH: "./" 
+   MAVEN_EXTRA_PARAMS_SONAR: ""
+   DOTNET_ENABLE: "false"
+   EXTRA_COMMAND: ""
+   GRADLE_ENABLE: "false"
+   MAVEN_SONAR: "false"
+   TAG_RUNNER: ""
+
+stages:
+  - sonar  
+
+workflow:
+  rules:
+    - if: $CI_COMMIT_TAG 
+
+services:
+  - name: docker:19.03.12-dind
+    command:
+      - /bin/sh
+      - -c
+#sss
+sonarqube-check:
+  stage: sonar
+  rules:
+    - if: $MAVEN_ENABLE != "true" && $DOTNET_ENABLE != "true" && $GRADLE_ENABLE != "true" && $MAVEN_SONAR_PARAMS != "true"
+  image: sonarsource/sonar-scanner-cli:latest
+  tags:
+    - $TAG_RUNNER
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+    GIT_SSL_NO_VERIFY: "true"
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+    - >
+      if [[ "${SERVICE_PATH}" == "./" ]]; then
+        SONAR_PROJECT_NAME=${CI_PROJECT_PATH}
+        SONAR_PROJECT_KEY=${CI_PROJECT_NAME}
+      else
+        SONAR_PROJECT_NAME=${CI_PROJECT_PATH}/${SERVICE_PATH}
+        SONAR_PROJECT_KEY=${SERVICE_PATH}
+      fi
+    - cd $SERVICE_PATH
+    - >
+      sonar-scanner
+      -Dsonar.qualitygate.wait=true
+      -Dsonar.projectKey="${SONAR_PROJECT_KEY}"
+      -Dsonar.projectName="${SONAR_PROJECT_NAME}"
+      -Dsonar.log.level=DEBUG
+
+sonarqube-maven-check:
+  stage: sonar
+  rules:
+    - if: $MAVEN_ENABLE == "true" || $MAVEN_SONAR_PARAMS == "true"
+  image: maven:3.8.1-openjdk-11
+  tags:
+    - $TAG_RUNNER
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+    GIT_SSL_NO_VERIFY: "true"
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  before_script:
+    - export M3_HOME=/home/gitlab-runner/maven3.8/
+    - export PATH=${M3_HOME}/bin:${PATH}
+  script:
+ #   - env
+    - >
+      if [[ "${SERVICE_PATH}" == "./" ]]; then
+        SONAR_PROJECT_NAME=${CI_PROJECT_PATH}
+        SONAR_PROJECT_KEY=${CI_PROJECT_NAME}
+      else
+        SONAR_PROJECT_NAME=${CI_PROJECT_PATH}/${SERVICE_PATH}
+        SONAR_PROJECT_KEY=${SERVICE_PATH}
+      fi
+    - cd $SERVICE_PATH
+    - >
+#      mvn -e verify sonar:sonar
+      mvn clean deploy -e verify sonar:sonar
+      $MAVEN_EXTRA_PARAMS_SONAR
+      -Dsonar.qualitygate.wait=false
+      -Dsonar.projectKey="${SONAR_PROJECT_KEY}"
+      -Dsonar.projectName="${SONAR_PROJECT_NAME}"
+      -Dsonar.log.level=DEBUG
+
+
+sonar-dotnet-check:
+  stage: sonar
+  rules:
+    - if: $DOTNET_ENABLE == "true"
+  image: mcr.microsoft.com/dotnet/sdk:6.0
+  tags:
+    - $TAG_RUNNER
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+    GIT_SSL_NO_VERIFY: "true"
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  script:
+      - >
+        if [[ "${SERVICE_PATH}" == "./" ]]; then
+          SONAR_PROJECT_NAME=${CI_PROJECT_PATH}
+          SONAR_PROJECT_KEY=${CI_PROJECT_NAME}
+        else
+          SONAR_PROJECT_NAME=${CI_PROJECT_PATH}/${SERVICE_PATH}
+          SONAR_PROJECT_KEY=${SERVICE_PATH}
+        fi
+      - cd $SERVICE_PATH
+      - "sed -i 's/http:/https:/g' /etc/apt/sources.list"
+      - "apt-get update"
+      - "apt-get install --yes openjdk-11-jre"
+      - echo $EXTRA_COMMAND
+      - $EXTRA_COMMAND
+      #- dotnet nuget add source "https://gitlab.com/api/v4/projects/33277437/packages/nuget/index.json" --name "mae-library-dt" --username "gitlab+deploy-token-797659" --password "TCweUPhBs3RKfH6cg7Du" --store-password-in-clear-text
+      - "dotnet tool install --global dotnet-sonarscanner"
+      - "export PATH=\"$PATH:$HOME/.dotnet/tools\""
+      - "dotnet sonarscanner begin /k:\"$SONAR_PROJECT_KEY\" /n:\"$SONAR_PROJECT_NAME\" /d:sonar.login=\"$SONAR_TOKEN\" /d:\"sonar.host.url=$SONAR_HOST_URL\" "
+      - "dotnet build"
+      - "dotnet sonarscanner end /d:sonar.login=\"$SONAR_TOKEN\""
+
+
+sonarqube-gradle-check:
+  stage: sonar
+  rules:
+    - if: $GRADLE_ENABLE == "true"
+  image: gradle:jdk11
+  tags:
+    - $TAG_RUNNER
+  variables:
+    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+    GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+    GIT_SSL_NO_VERIFY: "true"
+  cache:
+    key: "${CI_JOB_NAME}"
+    paths:
+      - .sonar/cache
+  # before_script:
+  #   - export M3_HOME=/home/gitlab-runner/maven3.8/
+  #   - export PATH=${M3_HOME}/bin:${PATH}
+  script:
+ #   - env
+    - >
+      if [[ "${SERVICE_PATH}" == "./" ]]; then
+        SONAR_PROJECT_NAME=${CI_PROJECT_PATH}
+        SONAR_PROJECT_KEY=${CI_PROJECT_NAME}
+      else
+        SONAR_PROJECT_NAME=${CI_PROJECT_PATH}/${SERVICE_PATH}
+        SONAR_PROJECT_KEY=${SERVICE_PATH}
+      fi
+    - cd $SERVICE_PATH
+    - >
+      ./gradlew sonarqube
+      -DskipTests
+      -Dsonar.qualitygate.wait=true
+      -Dsonar.projectKey="${SONAR_PROJECT_KEY}"
+      -Dsonar.projectName="${SONAR_PROJECT_NAME}"
+      -Dsonar.log.level=DEBUG
+      -Dsonar.host.url="${SONAR_HOST_URL}"
+      -Dsonar.login="${SONAR_TOKEN}"

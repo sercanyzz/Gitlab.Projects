@@ -1,0 +1,4 @@
+{{- if .Values.route.enabled }}
+Servis ulasim noktasi:
+https://{{ .Values.route.host.name }}
+{{- end }}

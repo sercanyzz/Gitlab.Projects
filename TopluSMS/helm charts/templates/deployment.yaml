@@ -1,0 +1,115 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  labels:
+    {{- include "tt-common.labels" . | nindent 4 }}
+  {{- if .Values.config }}
+  annotations:
+    checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+  {{- end }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "tt-common.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "tt-common.selectorLabels" . | nindent 8 }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "tt-common.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      #todo: add initcontainers as pluggable component
+      # {{- if .Values.initContainers }}
+      # initContainers:
+      #   {{- toYaml .Values.initContainers | nindent 8 }}
+      # {{- end }}
+      containers:
+        - name: {{ .Release.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: pod-port
+              containerPort: {{ .Values.containerPort }}
+              protocol: TCP
+          {{- if .Values.livenessProbe }}
+          livenessProbe: {{ toYaml .Values.livenessProbe | nindent 12 }}
+          {{- end }}
+          {{- if .Values.readinessprobe }}
+          readinessProbe: {{ toYaml .Values.readinessProbe | nindent 12 }}
+          {{- end }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          env: 
+            {{- if .Values.secret }}
+            - name: SECRET_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tt-common.fullname" . }}
+                  key: username
+            - name: SECRET_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "tt-common.fullname" . }}
+                  key: password 
+            {{- end }} 
+          {{- if .Values.extraEnvVars }}
+          {{- tpl (toYaml .Values.extraEnvVars) $ | nindent 12 }}
+          {{- end }}
+          {{- if or .Values.config .Values.secret .Values.extraConfigs }}
+          volumeMounts:
+            {{- if .Values.config }}
+            - mountPath: {{ .Values.config_path }}
+              subPath: properties
+              name: "config"
+            {{- end }}
+            {{- range $extraConfigs := .Values.extraConfigs}}
+            - mountPath: {{ $extraConfigs.config_path }}
+              subPath: {{ $extraConfigs.subPath }}
+              name: {{ $extraConfigs.volumename }}
+            {{- end }}
+            {{- if .Values.secret }}
+            - mountPath: {{ .Values.secret_path }}
+              name: "secret"
+            {{- end }}
+          {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if or .Values.config .Values.secret .Values.extraConfigs }}
+      volumes:
+        {{- if .Values.config }}
+        - name: "config"
+          configMap:
+            name: {{ include "tt-common.fullname" . }}
+        {{- end }}
+        {{- range $extraConfigs := .Values.extraConfigs }}
+        - name:  {{ $extraConfigs.volumename }}
+          configMap:
+            name: {{ $extraConfigs.name }}
+        {{- end }}
+        {{- if .Values.secret }}
+        - name: "secret"
+          secret:
+            secretName: {{ include "tt-common.fullname" . }}
+        {{- end }}
+      {{- end}}
